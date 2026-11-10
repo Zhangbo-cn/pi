@@ -672,6 +672,27 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
 	});
 
+	// Regression test for #11988: recovery omitted the truncated response and then stopped silently.
+	it("reports a failed recovery when a length stop leaves nothing to compact", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-1", contextWindow: 1_000_000, maxTokens: 100 }],
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("x", { stopReason: "length" })]);
+
+		await harness.session.prompt("hello");
+
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
+		expect(harness.eventsOfType("compaction_end")).toEqual([
+			expect.objectContaining({
+				reason: "overflow",
+				willRetry: false,
+				errorMessage: "Context overflow recovery failed: nothing to compact since the last compaction.",
+			}),
+		]);
+	});
+
 	it("stops after one compact-and-retry when a second response is also truncated", async () => {
 		const harness = await createHarness({
 			models: [{ id: "faux-1", contextWindow: 1_000_000, maxTokens: 100 }],

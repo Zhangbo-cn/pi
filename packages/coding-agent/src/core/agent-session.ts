@@ -3265,6 +3265,25 @@ export class AgentSession {
 			const pathEntries = this.sessionManager.getBranch();
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
+				// Overflow recovery already omitted the failed response; say why no retry follows (#11988).
+				if (reason === "overflow" && willRetry) {
+					const errorMessage = "Context overflow recovery failed: nothing to compact since the last compaction.";
+					this._emit({
+						type: "compaction_end",
+						reason,
+						result: undefined,
+						aborted: false,
+						willRetry: false,
+						errorMessage,
+					});
+					await this._emitSessionCompactFailed({
+						reason,
+						errorMessage,
+						aborted: false,
+						willRetry: false,
+						fromExtension: false,
+					});
+				}
 				return false;
 			}
 

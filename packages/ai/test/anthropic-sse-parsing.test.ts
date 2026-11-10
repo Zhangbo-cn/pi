@@ -713,6 +713,47 @@ describe("Anthropic raw SSE parsing", () => {
 		expect(result.usage.totalTokens).toBe(12);
 	});
 
+	// Regression test for #11988: a gateway reported input_tokens 5438 including 5248 cache reads.
+	it.each([
+		[false, 5438],
+		[true, 190],
+	])("maps cache-inclusive input_tokens (inputTokensIncludeCache: %s)", async (inputTokensIncludeCache, input) => {
+		const usage = {
+			input_tokens: 5438,
+			output_tokens: 5,
+			cache_read_input_tokens: 5248,
+			cache_creation_input_tokens: 0,
+		};
+		const events = minimalAnthropicEvents.map((event) => {
+			if (event.event === "message_start") {
+				return {
+					...event,
+					data: JSON.stringify({
+						type: "message_start",
+						message: { id: "msg_test", usage: { ...usage, output_tokens: 0 } },
+					}),
+				};
+			}
+			if (event.event === "message_delta") {
+				return {
+					...event,
+					data: JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage }),
+				};
+			}
+			return event;
+		});
+		const model = { ...getModel("anthropic", "claude-haiku-4-5"), compat: { inputTokensIncludeCache } };
+		const result = await streamAnthropic(
+			model,
+			normalizeContext({ messages: [{ role: "user", content: "Hello", timestamp: 1 }] }),
+			{ client: createFakeAnthropicClient(createSseResponse(events)) },
+		).result();
+
+		expect(result.usage.input).toBe(input);
+		expect(result.usage.cacheRead).toBe(5248);
+		expect(result.usage.totalTokens).toBe(input + 5 + 5248);
+	});
+
 	it("ignores unknown SSE events after message_stop", async () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 		const context = normalizeContext({

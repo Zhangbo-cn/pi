@@ -477,6 +477,13 @@ const AnthropicMessagesCompatProperties = {
 			default: true,
 		}),
 	),
+	inputTokensIncludeCache: opt(
+		bool({
+			description:
+				"Whether usage.input_tokens already includes cache_read_input_tokens and cache_creation_input_tokens, as some gateways (e.g. new-api) report it. When true, pi subtracts them so cached tokens are not counted twice in the context estimate.",
+			default: false,
+		}),
+	),
 	forceAdaptiveThinking: opt(
 		bool({
 			description:

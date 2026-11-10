@@ -35,6 +35,7 @@ import type {
 	TextContent,
 	Tool,
 	ToolResultMessage,
+	Usage,
 } from "../types.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { withCauseDetail } from "../utils/error-body.ts";
@@ -230,6 +231,19 @@ function shouldUseServerSideFallbackBeta(model: Model<"anthropic-messages">): bo
 	return (model.compat?.allowedFallbackModels?.length ?? 0) > 0;
 }
 
+/**
+ * Set usage.input and usage.totalTokens from the reported input_tokens. Anthropic reports input,
+ * cache reads and cache writes as disjoint counts; some gateways include the cache counts in
+ * input_tokens, which would count cached tokens twice in the context estimate.
+ */
+function setUsageInputAndTotal(usage: Usage, reportedInputTokens: number, inputTokensIncludeCache: boolean): void {
+	usage.input = inputTokensIncludeCache
+		? Math.max(0, reportedInputTokens - usage.cacheRead - usage.cacheWrite)
+		: reportedInputTokens;
+	// Anthropic doesn't provide total_tokens, compute from components
+	usage.totalTokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+}
+
 function getAnthropicCompat(model: Model<"anthropic-messages">) {
 	const isOpenRouter = model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai");
 	return {
@@ -239,6 +253,7 @@ function getAnthropicCompat(model: Model<"anthropic-messages">) {
 		sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? "openrouter" : undefined),
 		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? true,
 		supportsTemperature: model.compat?.supportsTemperature ?? true,
+		inputTokensIncludeCache: model.compat?.inputTokensIncludeCache ?? false,
 		allowEmptySignature: model.compat?.allowEmptySignature ?? false,
 		supportsStrictTools: model.compat?.supportsStrictTools ?? false,
 		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
@@ -840,6 +855,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			let client: Anthropic;
 			let isOAuth: boolean;
 			let usageModel = model;
+			// input_tokens as reported; kept separately so a later delta can update the cache counts it may include.
+			let reportedInputTokens = 0;
 			let inputTransformations: BetaInputTransformation[] | undefined;
 			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
@@ -967,14 +984,12 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					usageModel = fallbackCost ? { ...model, id: responseModel, cost: fallbackCost } : model;
 					// Capture initial token usage from message_start event
 					// This ensures we have input token counts even if the stream is aborted early
-					output.usage.input = event.message.usage.input_tokens || 0;
+					reportedInputTokens = event.message.usage.input_tokens || 0;
 					output.usage.output = event.message.usage.output_tokens || 0;
 					output.usage.cacheRead = event.message.usage.cache_read_input_tokens || 0;
 					output.usage.cacheWrite = event.message.usage.cache_creation_input_tokens || 0;
 					output.usage.cacheWrite1h = event.message.usage.cache_creation?.ephemeral_1h_input_tokens || 0;
-					// Anthropic doesn't provide total_tokens, compute from components
-					output.usage.totalTokens =
-						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+					setUsageInputAndTotal(output.usage, reportedInputTokens, compat.inputTokensIncludeCache);
 					calculateCost(usageModel, output.usage);
 				} else if (event.type === "content_block_start") {
 					if (event.content_block.type === "fallback") {
@@ -1101,7 +1116,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					// Preserves input_tokens from message_start when proxies omit it in message_delta.
 					if (event.usage) {
 						if (event.usage.input_tokens != null) {
-							output.usage.input = event.usage.input_tokens;
+							reportedInputTokens = event.usage.input_tokens;
 						}
 						if (event.usage.output_tokens != null) {
 							output.usage.output = event.usage.output_tokens;
@@ -1125,9 +1140,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 							output.usage.reasoning = thinkingTokens;
 						}
 					}
-					// Anthropic doesn't provide total_tokens, compute from components
-					output.usage.totalTokens =
-						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+					setUsageInputAndTotal(output.usage, reportedInputTokens, compat.inputTokensIncludeCache);
 					calculateCost(usageModel, output.usage);
 					if (isOpenRouterModel(model) && event.usage) {
 						// OpenRouter adds billing fields to streamed message_delta usage at runtime,

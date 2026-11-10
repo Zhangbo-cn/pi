@@ -65,7 +65,11 @@ describe("clampMaxTokensToContext", () => {
 		);
 	});
 
-	it("sends 1 token when the input already exceeds the window", () => {
-		expect(clampMaxTokensToContext(modelWith(943_718), contextWithInput(1_050_000), 943_718)).toBe(1);
+	it("sends 2048 tokens when the input already exceeds the window, so a real overflow is reported by the provider (#11988)", () => {
+		expect(clampMaxTokensToContext(modelWith(943_718), contextWithInput(1_050_000), 943_718)).toBe(2048);
+	});
+
+	it("keeps a requested limit below the floor (#11988)", () => {
+		expect(clampMaxTokensToContext(modelWith(943_718), contextWithInput(1_050_000), 1)).toBe(1);
 	});
 });

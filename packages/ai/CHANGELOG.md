@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `compat.inputTokensIncludeCache` for `anthropic-messages` gateways (e.g. new-api) whose `usage.input_tokens` already includes the cache read and write counts. With it set, pi subtracts them instead of counting cached tokens twice in the context estimate ([#11988](https://github.com/earendil-works/pi/issues/11988))
+
+### Fixed
+
+- Fixed requests with `max_tokens: 1` when the context estimate leaves no output room. The output limit now stays at 2048 or more, so an actual overflow comes back from the provider as an overflow error and starts recovery, instead of every reply stopping after one token ([#11988](https://github.com/earendil-works/pi/issues/11988))
+
 ## [1.5.1] - 2026-11-09
 
 ### Breaking Changes

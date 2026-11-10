@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed truncated-response recovery ending silently when there was nothing new to compact since the last compaction. It now reports `Context overflow recovery failed: nothing to compact since the last compaction.` ([#11988](https://github.com/earendil-works/pi/issues/11988))
+
 ## [1.5.1] - 2026-11-09
 
 ### New Features

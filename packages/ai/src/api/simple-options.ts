@@ -20,11 +20,16 @@ const CONTEXT_SAFETY_RATIO = 0.15;
 // large window, or any small window such as a 32k local model) only the fixed margin is kept, and
 // output is capped at this size so an OpenRouter overcount still fits for a while before compaction.
 const MIN_OUTPUT_WITH_RATIO_MARGIN = 32768;
-const MIN_MAX_TOKENS = 1;
+// Smallest output limit sent when the estimate leaves less room. A smaller limit cannot hold a
+// tool call or a useful answer, so the request would end in a length stop that changes nothing
+// and repeats on every turn. 2048 fits Anthropic's minimum thinking budget (1024) plus an answer.
+// With this floor a real overflow is reported by the provider instead, which starts overflow
+// recovery. Callers that ask for less (e.g. cache warming) still get what they asked for.
+const MIN_MAX_TOKENS = 2048;
 
 /** Fit maxTokens into the context window, leaving room for the input being counted higher than estimated. */
 export function clampMaxTokensToContext(model: Model<Api>, context: TranscriptContext, maxTokens: number): number {
-	if (model.contextWindow <= 0) return Math.max(MIN_MAX_TOKENS, maxTokens);
+	if (model.contextWindow <= 0) return Math.max(1, maxTokens);
 	const input = estimateContextTokens(context).tokens;
 	const margin = Math.max(CONTEXT_SAFETY_TOKENS, Math.ceil(input * CONTEXT_SAFETY_RATIO));
 	let room = model.contextWindow - input - margin;

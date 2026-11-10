@@ -1086,6 +1086,11 @@
           "description": "Whether the model accepts the Anthropic temperature request field. Claude Opus 4.7+ rejects non-default values.",
           "default": true
         },
+        "inputTokensIncludeCache": {
+          "type": "boolean",
+          "description": "Whether usage.input_tokens already includes cache_read_input_tokens and cache_creation_input_tokens, as some gateways (e.g. new-api) report it. When true, pi subtracts them so cached tokens are not counted twice in the context estimate.",
+          "default": false
+        },
         "forceAdaptiveThinking": {
           "type": "boolean",
           "description": "Whether to force adaptive thinking (thinking.type: adaptive plus output_config.effort) regardless of model ID. Built-in models that require adaptive thinking set this in generated metadata. Custom Anthropic-compatible providers can set this to true for any model whose upstream requires the adaptive format. Set false to opt out on overridden built-in models.",
